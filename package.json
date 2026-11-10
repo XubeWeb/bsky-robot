@@ -1,0 +1,5 @@
+﻿{
+  "name": "bsky-robot",
+  "type": "module",
+  "private": true
+}

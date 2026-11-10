@@ -1,0 +1,88 @@
+name: Robots auto-like
+
+on:
+  # GitHub NO cumple el cron: un '*/15' se queda en cinco despertares al dia,
+  # no en noventa y seis. Deprioriza los eventos programados, y mas en un repo
+  # privado. Asi que el cron cambia de estrategia:
+  #
+  #  · minutos FIJOS en vez de '*/15'. GitHub respeta mejor una hora concreta
+  #    que un intervalo, que es lo primero que descarta cuando va cargado.
+  #  · SOLO dentro de la ventana horaria del robot (8-23 en Madrid = 7-22 UTC).
+  #    Antes un tercio de los despertares caia de noche y se iba entero en
+  #    "fuera de la ventana horaria": despertares tirados a la basura cuando
+  #    son justo el recurso escaso.
+  #
+  # Cada robot sigue decidiendo si le toca (next_due_at con jitter) y recoge el
+  # "Ejecutar ahora" (run_requested_at) que pone el panel.
+  schedule:
+    - cron: '5,35 7-22 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Forzar (ignora la cadencia)'
+        required: false
+        default: 'true'
+
+concurrency:
+  group: auto-like
+  cancel-in-progress: false
+
+jobs:
+  like:
+    runs-on: ubuntu-latest
+    # Red de seguridad: sin esto, un bucle atascado (p.ej. reintentos sin límite
+    # ante un error persistente de la API) puede correr hasta las 6h (máximo de
+    # GitHub) y agotar la cuota mensual de minutos en un solo run. Margen sobre
+    # RUN_MINUTES, que es quien corta de verdad.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Sin los secrets configurados el robot no puede hacer nada. Salimos
+      # limpiamente en vez de fallar: un repo recien clonado no deberia
+      # mandarte un correo de error cada 15 minutos. Ver MIGRACION.md.
+      - name: Comprobar secrets
+        id: secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_OWNER_ID: ${{ secrets.SUPABASE_OWNER_ID }}
+          BSKY_ACCOUNTS: ${{ secrets.BSKY_ACCOUNTS }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ] || [ -z "$SUPABASE_OWNER_ID" ] || [ -z "$BSKY_ACCOUNTS" ]; then
+            echo "::notice::Faltan secrets (ver MIGRACION.md). No hago nada."
+            echo "listo=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "listo=si" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Procesar robots
+        if: steps.secrets.outputs.listo == 'si'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_OWNER_ID: ${{ secrets.SUPABASE_OWNER_ID }}
+          BSKY_ACCOUNTS: ${{ secrets.BSKY_ACCOUNTS }}
+          BSKY_SERVICE: ${{ vars.BSKY_SERVICE || 'https://bsky.social' }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+          # El robot para SOLO y cierra bien (guarda el run y la próxima cita).
+          # timeout-minutes queda como red de seguridad externa: si salta, es
+          # que algo se atascó, no el funcionamiento normal.
+          #
+          # EL PRESUPUESTO MANDA. Un repo privado trae 2.000 minutos de
+          # Actions al mes, y eso es lo que de verdad limita al robot:
+          #   2.000 min/mes ÷ 30 días ≈ 66 min/día
+          #   menos lo que gastan los despliegues (~2 min cada uno)
+          #   = unos 60 min/día de robot
+          # Con 15 min por vuelta salen CUATRO vueltas al día, y a ~9 likes
+          # por minuto (pausas de 5-8 s) son unos 540 likes diarios.
+          #
+          # Vueltas cortas y repartidas, y no dos largas: para una cuenta que
+          # da likes, repartir se parece más a cómo lo haría una persona.
+          #
+          # Si el repositorio se hiciera público, los minutos dejan de estar
+          # medidos y esto puede subir a 30 sin pensarlo.
+          RUN_MINUTES: '15'
+        run: node scripts/auto-like.mjs
