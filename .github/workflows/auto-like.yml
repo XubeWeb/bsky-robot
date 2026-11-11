@@ -2,18 +2,20 @@ name: Robots auto-like
 
 on:
   # GitHub no cumple el cron: pide lo que pidas, dispara dos o tres veces al
-  # dia y a deshora. Peleando con eso se pierde el tiempo, asi que la
-  # estrategia es la contraria: NO depender de que dispare a menudo.
+  # dia y a deshora. El repositorio publico corrio a las 21:45 y a la 01:50, y
+  # luego diez horas en blanco. Peleando con eso se pierde el tiempo.
   #
-  # En un repositorio publico los minutos de Actions no se cuentan, y un
-  # trabajo puede durar hasta seis horas. Asi que en vez de muchas vueltas
-  # cortas, POCAS Y MUY LARGAS: tres citas al dia de cinco horas y media.
-  # Cubren las dieciseis horas de la ventana, y si GitHub se salta una, las
-  # otras dos siguen tapando casi todo el dia.
+  # La estrategia se invierte: NO depender de que dispare a menudo. En un
+  # repositorio publico los minutos no se cuentan y un trabajo puede durar
+  # seis horas, asi que POCAS vueltas y MUY LARGAS. Tres citas cubren las
+  # dieciseis horas de ventana, y si GitHub se salta una, las otras dos tapan
+  # casi todo el dia igual.
   #
   # El robot se para solo al salir de la ventana horaria, asi que una vuelta
-  # larga nunca se sale de tu horario aunque le sobre tiempo.
+  # larga nunca se sale del horario aunque le sobre tiempo.
+  schedule:
     - cron: '5 6,12,18 * * *'
+
   workflow_dispatch:
     inputs:
       force:
@@ -21,15 +23,11 @@ on:
         required: false
         default: 'true'
 
+# Una sola vuelta a la vez. Con vueltas de cinco horas y media, dos solapadas
+# serian dos robots con la misma cuenta pisandose el cursor de cada objetivo.
+# La segunda espera a que acabe la primera.
 concurrency:
   group: auto-like
-  cancel-in-progress: false
-
-# Una sola vuelta a la vez. Con vueltas de cinco horas y media, dos
-# solapadas serian dos robots likeando con la misma cuenta y pisandose el
-# cursor de cada objetivo. La segunda espera a que acabe la primera.
-concurrency:
-  group: robot
   cancel-in-progress: false
 
 jobs:
