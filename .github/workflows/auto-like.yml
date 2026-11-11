@@ -89,3 +89,40 @@ jobs:
           # medidos y esto puede subir a 30 sin pensarlo.
           RUN_MINUTES: '330'
         run: node scripts/auto-like.mjs
+
+      # ---------------------------------------------------------------- cadena
+      # LA VUELTA SIGUIENTE LA PIDE ESTA, NO EL CRON.
+      #
+      # El cron de GitHub no es fiable y no hay forma de hacerlo fiable: pides
+      # cada quince minutos y dispara dos veces al dia, a deshora. Mientras el
+      # robot dependa de el, "a veces falla" es lo normal.
+      #
+      # Asi que al terminar, la propia vuelta encarga la siguiente. Eso forma
+      # una cadena que no necesita cron: mientras una vuelta acabe bien, habra
+      # otra detras. El cron se queda solo como arranque, por si la cadena se
+      # rompe del todo (un fallo de red, un corte de GitHub).
+      #
+      # HACE FALTA UN TOKEN PROPIO. El GITHUB_TOKEN automatico NO puede
+      # disparar workflows: GitHub lo prohibe a proposito para que un workflow
+      # no se llame a si mismo sin control. Un token personal si puede.
+      #
+      # Sin ROBOT_TOKEN configurado este paso no hace nada y todo sigue como
+      # antes, con el cron. No rompe nada por no estar.
+      - name: Encargar la vuelta siguiente
+        if: steps.secrets.outputs.listo == 'si'
+        env:
+          GH_TOKEN: ${{ secrets.ROBOT_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::Sin ROBOT_TOKEN: la cadena no se encadena. Manda el cron."
+            exit 0
+          fi
+          # Fuera de la ventana horaria no se encadena: dormir cinco horas
+          # ocupando un runner no sirve de nada, y el cron de las 6 lo
+          # arranca por la mañana.
+          hora=$(date -u +%-H)
+          if [ "$hora" -lt 6 ] || [ "$hora" -ge 22 ]; then
+            echo "::notice::Fuera de ventana ($hora UTC). La cadena sigue mañana."
+            exit 0
+          fi
+          gh workflow run auto-like.yml --repo "$GITHUB_REPOSITORY" -f force=false             && echo "Vuelta siguiente encargada."
