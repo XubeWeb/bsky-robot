@@ -1,21 +1,19 @@
 name: Robots auto-like
 
 on:
-  # GitHub NO cumple el cron: un '*/15' se queda en cinco despertares al dia,
-  # no en noventa y seis. Deprioriza los eventos programados, y mas en un repo
-  # privado. Asi que el cron cambia de estrategia:
+  # GitHub no cumple el cron: pide lo que pidas, dispara dos o tres veces al
+  # dia y a deshora. Peleando con eso se pierde el tiempo, asi que la
+  # estrategia es la contraria: NO depender de que dispare a menudo.
   #
-  #  · minutos FIJOS en vez de '*/15'. GitHub respeta mejor una hora concreta
-  #    que un intervalo, que es lo primero que descarta cuando va cargado.
-  #  · SOLO dentro de la ventana horaria del robot (8-23 en Madrid = 7-22 UTC).
-  #    Antes un tercio de los despertares caia de noche y se iba entero en
-  #    "fuera de la ventana horaria": despertares tirados a la basura cuando
-  #    son justo el recurso escaso.
+  # En un repositorio publico los minutos de Actions no se cuentan, y un
+  # trabajo puede durar hasta seis horas. Asi que en vez de muchas vueltas
+  # cortas, POCAS Y MUY LARGAS: tres citas al dia de cinco horas y media.
+  # Cubren las dieciseis horas de la ventana, y si GitHub se salta una, las
+  # otras dos siguen tapando casi todo el dia.
   #
-  # Cada robot sigue decidiendo si le toca (next_due_at con jitter) y recoge el
-  # "Ejecutar ahora" (run_requested_at) que pone el panel.
-  schedule:
-    - cron: '5,35 7-22 * * *'
+  # El robot se para solo al salir de la ventana horaria, asi que una vuelta
+  # larga nunca se sale de tu horario aunque le sobre tiempo.
+    - cron: '5 6,12,18 * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -27,6 +25,13 @@ concurrency:
   group: auto-like
   cancel-in-progress: false
 
+# Una sola vuelta a la vez. Con vueltas de cinco horas y media, dos
+# solapadas serian dos robots likeando con la misma cuenta y pisandose el
+# cursor de cada objetivo. La segunda espera a que acabe la primera.
+concurrency:
+  group: robot
+  cancel-in-progress: false
+
 jobs:
   like:
     runs-on: ubuntu-latest
@@ -34,7 +39,7 @@ jobs:
     # ante un error persistente de la API) puede correr hasta las 6h (máximo de
     # GitHub) y agotar la cuota mensual de minutos en un solo run. Margen sobre
     # RUN_MINUTES, que es quien corta de verdad.
-    timeout-minutes: 25
+    timeout-minutes: 345
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -84,5 +89,5 @@ jobs:
           #
           # Si el repositorio se hiciera público, los minutos dejan de estar
           # medidos y esto puede subir a 30 sin pensarlo.
-          RUN_MINUTES: '15'
+          RUN_MINUTES: '330'
         run: node scripts/auto-like.mjs

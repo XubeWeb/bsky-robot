@@ -13,6 +13,7 @@
 //   RUN_MINUTES    = (opcional) minutos de trabajo antes de cerrar limpio (8)
 
 import { processBot } from '../lib/robot.js';
+import { inActiveWindow } from '../lib/strategy.js';
 import { supa } from '../lib/supa.js';
 
 const {
@@ -61,7 +62,17 @@ const credOf = (handle) => accounts.find((a) => a.handle.replace(/^@/, '').toLow
     any = true;
     try {
       await processBot(bot, { ...credOf(bot.handle), service: BSKY_SERVICE }, db, {
-        force, onLog: log, shouldStop: () => Date.now() >= deadline,
+        force, onLog: log,
+        // Se para por dos motivos, no por uno: cuando se acaba su rato Y
+        // cuando se sale de la ventana horaria.
+        //
+        // Lo segundo hace falta ahora que las vueltas son largas. La ventana
+        // se miraba UNA vez, al empezar, y con vueltas de un cuarto de hora
+        // daba igual; con vueltas de cinco horas, una que arrancara a las
+        // nueve de la noche seguiria dando likes a las dos de la manana.
+        shouldStop: () => Date.now() >= deadline
+          || !inActiveWindow(Date.now(), bot.active_hour_start,
+                             bot.active_hour_end, bot.tz_offset_min),
       });
     } catch (e) { log(`❌ @${bot.handle}: ${e.message}`); }
   }
